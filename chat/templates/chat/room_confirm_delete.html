@@ -1,0 +1,10 @@
+{% extends 'chat/base.html' %}
+{% load django_bootstrap5 %}
+{% block content %}
+    <h2>{{ room.name }} 삭제하기</h2>
+    <form action="" method="post">
+        {% csrf_token %}
+        <div class="alert alert-danger">삭제하시겠습니까?</div>
+        <input type='submit' value="삭제하겠습니다." class="btn btn-danger">
+    </form>
+{% endblock %}

@@ -1,0 +1,135 @@
+{% extends 'chat/base.html' %}
+{% load django_bootstrap5 %}
+{% block content %}
+    <div class="container my-5">
+        <div class="row">
+            <div class="col-sm-8">
+                <ol class="list-group list-group-numbered">
+                    {% for room in room_list %}
+                        <li class="list-group-item d-flex justify-content-between align-items-start">
+                            <div class="ms-2 me-auto">
+                                <div class="fw-bold">
+                                    <a href="{% url 'chat:room_chat' room.pk %}">{{ room.name }} 채팅방</a>
+                                </div>
+                                방장 : {{ room.owner.username }}
+                            </div>
+                            <span class="badge bg-primary rounded-pill">14</span>
+                        </li>
+                    {% endfor %}
+                </ol>
+                <a href="{% url 'chat:room_new' %}" class="btn btn-primary mt-3">채팅방 만들기</a>
+            </div>
+            <div class="col-sm-4">
+                <div class="card" style="height: 600px">
+                    <div class="card-header">
+                        접속 유저 수 <span id="user_count"></span>
+                    </div>
+                    <div class="card-body">
+                        <ul id="user_list">
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+{% block scripts %}
+    <script>
+    const handlers = {
+        username_set : new Set(),
+        chat_message_tag:null,
+        ws:null,
+        retry:0,
+        connect(){
+            if(this.ws){this.ws.close();}
+            this.ws = new WebSocket(ws_url || this.ws?.url);
+            this.ws.onopen = this.onopen.bind(this);
+            this.ws.onclose = this.onclose.bind(this);
+            this.ws.onerror = this.onerror.bind(this);
+            this.ws.onmessage = this.onmessage.bind(this);
+        },
+        init(){
+            this.chat_message_tag = document.querySelector('#chat_messages');
+        },
+        onopen(){
+            console.log('웹소켓 서버와 접속');
+            this.retry = 0;
+            fetch('{% url 'chat:lobby_users' %}')
+                .then(response => response.json())
+                .then(({username_list}) => {
+                    this.username_set = new Set([...this.username_set, ...username_list]);
+                    this.update_user_list();
+                })
+        },
+        onclose(event){
+            const close_code = event.code;
+            if(close_code === 4000){
+                this.modal('채팅방이 삭제되었습니다. 대기실로 이동합니다.', () => {
+                    window.location.href = '{% url 'chat:index' %}';
+                });
+            }
+            else if(!event.wasClean){
+                console.error('웹소켓 서버가 죽었거나, 네트워크 장애입니다.');
+                if(this.retry < 3){
+                    this.retry += 1;
+                    setTimeout(()=>{
+                        this.reconnect();
+                        console.log(`[${this.retry}] 접속 재시도...`);
+                    }, 1000 * this.retry);
+                }else{
+                    console.log('웹소켓 서버에 접속할 수 없습니다. 대기실로 이동합니다.');
+                    window.location.href = '{% url 'chat:index' %}';
+                }
+            }
+        },
+        onerror(){
+            console.log('웹소켓 에러가 발생했습니다. 대기실로 이동합니다.');
+            window.location.href = '{% url 'chat:index' %}';
+        },
+        onmessage(event){
+            const message_json = event.data;
+            const {type, message, sender, username, time, img} = JSON.parse(message_json);
+            switch (type){
+                case 'chat.user.join':
+                    this.username_set.add(username);
+                    this.update_user_list();
+                    break;
+
+                case 'chat.user.leave':
+                    this.username_set.delete(username);
+                    this.update_user_list();
+                    break;
+                default:
+                    console.error(`Invalid message type ${type}`);
+            }
+
+        },
+        onsubmit(event){
+            event.preventDefault();
+            const form_data = new FormData(event.target);
+            const props = Object.fromEntries(form_data);
+            event.target.reset();
+            const {message} = props;
+            console.log('웹소켓으로 전송할 메시지', message);
+            this.ws.send(JSON.stringify({
+                type : 'chat.message',
+                message:message,
+            }))
+        },
+        reconnect(){
+              this.connect();
+        },
+        update_user_list(){
+            const html = [...this.username_set]
+                .map(username=> `<li>${username}</li>`)
+                .join('');
+            document.querySelector('#user_list').innerHTML = html;
+            document.querySelector('#user_count').textContent = `(${this.username_set.size}명)`;
+        }
+    };
+    handlers.init();
+    const protocol = location.protocol === 'http:' ? 'ws:' : 'wss';
+    const ws_url = protocol + "//" + location.host + "/ws" + location.pathname;
+    handlers.connect(ws_url);
+    </script>
+{% endblock %}

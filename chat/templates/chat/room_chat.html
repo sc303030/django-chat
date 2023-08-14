@@ -1,0 +1,415 @@
+{% extends 'chat/base.html' %}
+{% load django_bootstrap5 %}
+{% block extra-style %}
+    <style>
+        .not-me {
+            background-color: #f5f6f7;
+        }
+        .user-img {
+            width: 45px;
+            height: 100%;
+            margin-top: 1rem;
+        }
+        .v-line {
+          border-left : thick solid #6c757d;
+          height : .875em;
+        }
+        .modify-btn {
+            cursor: pointer;
+        }
+        .delete-btn {
+            cursor: pointer;
+        }
+    </style>
+{% endblock %}
+{% block content %}
+    <div class="container my-5">
+        <div class="row">
+            <div class="col-sm-8">
+                <div class="card" style="height: 600px">
+                    <div class="card-header">채팅방 : {{ room.name }}</div>
+                    <div class="card-body overflow-hidden">
+                        <div id='chat_messages' class="w-100 h-100 border-0 overflow-scroll"></div>
+                    </div>
+                    <div class="card-footer">
+                        <form id="message_form">
+                            <input type="text"
+                                   name='message'
+                                   class="form-control"
+                                   autofocus
+                                   autocomplete="off">
+                        </form>
+                    </div>
+                </div>
+                <hr class="my-3" />
+                <a href="{% url 'chat:index' %}" class="btn btn-primary">대기실로 이동</a>
+                {% if request.user == room.owner %}
+                    <a href="{% url 'chat:room_delete'  room.pk %}" class="btn btn-danger">채팅방 삭제하기</a>
+                {% endif %}
+            </div>
+            <div class="col-sm-4">
+                <div class="card" style="height: 600px">
+                    <div class="card-header">
+                        접속 유저 <span id="user_count"></span>
+                    </div>
+                    <div class="card-body">
+                        <ul id="user_list">
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Modal -->
+    <div class="modal fade"
+         id="staticBackdrop"
+         data-bs-backdrop="static"
+         data-bs-keyboard="false"
+         tabindex="-1"
+         aria-labelledby="staticBackdropLabel"
+         aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="staticBackdropLabel">알림</h5>
+                </div>
+                <div class="modal-body"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade"
+         id="exampleModal"
+         tabindex="-1"
+         aria-labelledby="exampleModalLabel"
+         aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exampleModalLabel"></h5>
+                    <button type="button"
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="message_modify_form">
+                        <div class="mb-3">
+                            <input type="text"
+                                   class="form-control"
+                                   id="msg-modify"
+                                   name="message"
+                                   data-pk="">
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                            <button type="submit" class="btn btn-primary">수정하기</button>
+                        </div>
+                    </form>
+                </div>
+
+            </div>
+        </div>
+    </div>
+ 
+
+{% endblock %}
+{% block scripts %}
+    <script>
+    const handlers = {
+        username_set : new Set(),
+        chat_message_tag:null,
+        ws:null,
+        retry:0,
+        connect(){
+            if(this.ws){this.ws.close();}
+            this.ws = new WebSocket(ws_url || this.ws?.url);
+            this.ws.onopen = this.onopen.bind(this);
+            this.ws.onclose = this.onclose.bind(this);
+            this.ws.onerror = this.onerror.bind(this);
+            this.ws.onmessage = this.onmessage.bind(this);
+        },
+        init(){
+            this.chat_message_tag = document.querySelector('#chat_messages');
+            document.querySelector('#message_form').addEventListener('submit', this.onsubmit.bind(this));
+            document.querySelector('#message_modify_form').addEventListener('submit', this.onsubmit_msg.bind(this));
+        },
+        onopen(){
+            console.log('웹소켓 서버와 접속');
+            this.retry = 0;
+            fetch('{% url 'chat:room_users' room.pk %}')
+                .then(response => response.json())
+                .then(({username_list}) => {
+                    this.username_set = new Set([...this.username_set, ...username_list]);
+                    this.update_user_list();
+                });
+            fetch('{% url 'chat:room_past_message' room.pk %}')
+                .then(response => response.json())
+                .then(({message}) => {
+                    this.past_append_message(message);
+                });
+
+        },
+        onclose(event){
+            const close_code = event.code;
+            if(close_code === 4000){
+                this.modal('채팅방이 삭제되었습니다. 대기실로 이동합니다.', () => {
+                    window.location.href = '{% url 'chat:index' %}';
+                });
+            }
+            else if(!event.wasClean){
+                console.error('웹소켓 서버가 죽었거나, 네트워크 장애입니다.');
+                if(this.retry < 3){
+                    this.retry += 1;
+                    setTimeout(()=>{
+                        this.reconnect();
+                        console.log(`[${this.retry}] 접속 재시도...`);
+                    }, 1000 * this.retry);
+                }else{
+                    console.log('웹소켓 서버에 접속할 수 없습니다. 대기실로 이동합니다.');
+                    window.location.href = '{% url 'chat:index' %}';
+                }
+            }
+        },
+        onerror(){
+            console.log('웹소켓 에러가 발생했습니다. 대기실로 이동합니다.');
+            window.location.href = '{% url 'chat:index' %}';
+        },
+        onmessage(event){
+            const message_json = event.data;
+            const {type, pk ,message, sender, username, time, img} = JSON.parse(message_json);
+            switch (type){
+                case 'chat.message':
+                    this.append_message(message, pk, sender, time, img);
+                    break;
+                case 'chat.user.join':
+                    this.append_message(`${username}님이 들어오셨습니다.`);
+                    this.username_set.add(username);
+                    this.update_user_list();
+                    break;
+                case 'chat.user.leave':
+                    this.append_message(`${username}님이 나가셨습니다.`);
+                    this.username_set.delete(username);
+                    this.update_user_list();
+                    break;
+                case 'chat.message.modify.success':
+                    this.append_modify_message(pk, message, time);
+                    break;
+                default:
+                    console.error(`Invalid message type ${type}`);
+            }
+
+        },
+        past_append_message(message){
+            for(let m of message){
+                const {message, sender, time, img } = m;
+                const element = document.createElement('div'); /* 처음 div */
+                const img_ele = document.createElement('img');
+                img_ele.className = 'user-img';
+                if(img !== undefined){
+                    img_ele.src = img;
+                }
+                const wrapper = document.createElement('div');
+                const message_p_tag = document.createElement('p');
+                const time_p_tag = document.createElement('p');
+                const name_span_tag = document.createElement('span');
+                if (sender === "{{ user.username }}"){
+                    element.className = 'd-flex flex-row justify-content-end pt-1 me';
+                    message_p_tag.className = 'small p-2 me-3 mb-1 text-white rounded-3 bg-primary';
+                    message_p_tag.textContent = message;
+                    time_p_tag.className = 'small me-3 mb-3 rounded-3 text-muted d-flex justify-content-end';
+                    time_p_tag.textContent = time;
+                    name_span_tag.className = 'small me-3 rounded-3 d-flex justify-content-end';
+                    name_span_tag.textContent = sender;
+                    wrapper.appendChild(name_span_tag);
+                    wrapper.appendChild(message_p_tag);
+                    wrapper.appendChild(time_p_tag);
+                    element.appendChild(wrapper);
+                    if(img !== undefined){
+                        element.appendChild(img_ele);
+                    }
+                }else {
+                    element.className += 'd-flex flex-row justify-content-start';
+                    if(img !== undefined){
+                        element.appendChild(img_ele);
+                    }
+                    message_p_tag.className = 'small p-2 ms-3 mb-1 rounded-3 not-me'
+                    message_p_tag.textContent = message;
+                    time_p_tag.className = 'small ms-3 mb-3 rounded-3 text-muted';
+                    time_p_tag.textContent = time;
+                    name_span_tag.className = 'small ms-3 rounded-3';
+                    name_span_tag.textContent = sender;
+                    wrapper.appendChild(name_span_tag);
+                    wrapper.appendChild(message_p_tag);
+                    wrapper.appendChild(time_p_tag);
+                    element.appendChild(wrapper);
+                }
+                this.chat_message_tag.appendChild(element);
+                this.chat_message_tag.scrollTop = this.chat_message_tag.scrollHeight;
+            }
+
+        },
+        append_message(message, pk , sender, time, img){
+            const element = document.createElement('div'); /* 처음 div */
+            const img_ele = document.createElement('img');
+            img_ele.className = 'user-img';
+            if(img !== undefined){
+                img_ele.src = img;
+            }
+            const wrapper = document.createElement('div');
+            const message_p_tag = document.createElement('p');
+            const time_p_tag = document.createElement('p');
+            const name_span_tag = document.createElement('span');
+            if (sender === "{{ user.username }}"){
+                const message_div = document.createElement('div');
+                message_div.id = `message-${pk}`;
+                element.className = 'd-flex flex-row justify-content-end pt-1 me';
+                message_p_tag.className = 'small p-2 me-3 mb-1 text-white rounded-3 bg-primary';
+                message_p_tag.textContent = message;
+                message_p_tag.id = `p-${pk}`;
+                const modify_delete_btn_div = document.createElement('div');
+                modify_delete_btn_div.className = 'd-flex';
+                const modify_btn = document.createElement('span');
+                modify_btn.className = 'small me-1 mb-2 rounded-3 text-muted d-flex justify-content-end modify-btn';
+                modify_btn.textContent = '수정';
+                modify_btn.addEventListener('click', () => {this.msg_modal(pk, () => {}, true)});
+                const delete_btn = document.createElement('span');
+                delete_btn.className = 'small me-1 mb-2 rounded-3 text-muted d-flex justify-content-end delete-btn';
+                delete_btn.textContent = '삭제';
+                delete_btn.addEventListener('click', () => {this.msg_modal(pk, () => {}, undefined, true)});
+                const btn_line = document.createElement('span');
+                btn_line.className = 'small me-1 mb-2 rounded-3 text-muted d-flex justify-content-end';
+                btn_line.textContent = '|';
+                modify_delete_btn_div.appendChild(modify_btn);
+                modify_delete_btn_div.appendChild(btn_line);
+                modify_delete_btn_div.appendChild(delete_btn);
+                message_div.appendChild(modify_delete_btn_div);
+                message_div.appendChild(message_p_tag);
+                time_p_tag.className = 'small me-3 mb-3 rounded-3 text-muted d-flex justify-content-end';
+                time_p_tag.textContent = time;
+                time_p_tag.id = `time-${pk}`
+                name_span_tag.className = 'small me-3 rounded-3 d-flex justify-content-end';
+                name_span_tag.textContent = sender;
+                wrapper.appendChild(name_span_tag);
+                wrapper.appendChild(message_div);
+                wrapper.appendChild(time_p_tag);
+                element.appendChild(wrapper);
+                if(img !== undefined){
+                    element.appendChild(img_ele);
+                }
+            }else {
+                element.className += 'd-flex flex-row justify-content-start';
+                if(img !== undefined){
+                    element.appendChild(img_ele);
+                }
+                message_p_tag.className = 'small p-2 ms-3 mb-1 rounded-3 not-me';
+                message_p_tag.textContent = message;
+                message_p_tag.id = `p-${pk}`;
+                time_p_tag.className = 'small ms-3 mb-3 rounded-3 text-muted';
+                time_p_tag.textContent = time;
+                time_p_tag.id = `time-${pk}`
+                name_span_tag.className = 'small ms-3 rounded-3';
+                name_span_tag.textContent = sender;
+                wrapper.appendChild(name_span_tag);
+                wrapper.appendChild(message_p_tag);
+                wrapper.appendChild(time_p_tag);
+                element.appendChild(wrapper);
+            }
+            this.chat_message_tag.appendChild(element);
+            this.chat_message_tag.scrollTop = this.chat_message_tag.scrollHeight;
+        },
+        append_modify_message(pk , message, time){
+            const p_message = document.querySelector(`#p-${pk}`);
+            const p_time = document.querySelector(`#time-${pk}`);
+            p_message.innerText = message;
+            p_time.innerText=time;
+        },
+        onsubmit(event){
+            event.preventDefault();
+            const form_data = new FormData(event.target);
+            const props = Object.fromEntries(form_data);
+            event.target.reset();
+            const {message} = props;
+            console.log('웹소켓으로 전송할 메시지', message);
+            this.ws.send(JSON.stringify({
+                type : 'chat.message',
+                message:message,
+            }))
+        },
+        onsubmit_msg(event){
+            event.preventDefault();
+            const form_data = new FormData(event.target);
+            const props = Object.fromEntries(form_data);
+            const pk = event.target.querySelector('input').getAttribute('data-pk');
+            event.target.reset();
+            const {message} = props;
+            console.log('웹소켓으로 전송할 메시지', message);
+            this.ws.send(JSON.stringify({
+                type : 'chat.message.modify',
+                message:message,
+                message_pk:pk
+            }))
+        },
+        reconnect(){
+              this.connect();
+        },
+        modal(message, ok_handler){
+            const modal_ele = document.querySelector('#staticBackdrop');
+            const body_ele = modal_ele.querySelector('.modal-body');
+            const button_ele = modal_ele.querySelector('.modal-footer button');
+            body_ele.textContent = message;
+            button_ele.addEventListener('click', ()=>{
+                if(ok_handler){
+                    ok_handler();
+                    modal.hide();
+                }
+            });
+            const modal = new bootstrap.Modal(modal_ele);
+            modal.show();
+        },
+        msg_modal(pk , ok_handler, modify_btn, delete_btn){
+            const message_div = document.querySelector(`#message-${pk}`);
+            const message = message_div.querySelector(`#p-${pk}`).innerText;
+            const modal_ele = document.querySelector('#exampleModal');
+            const body_ele = modal_ele.querySelector('.modal-body');
+            const button_ele = modal_ele.querySelector('.modal-footer .btn-primary');
+            const model_label = document.querySelector('#exampleModalLabel');
+            if(modify_btn !== undefined){
+                model_label.textContent = '메시지 수정하기';
+                const msg_input = modal_ele.querySelector('#msg-modify');
+                msg_input.value = message;
+                msg_input.setAttribute('data-pk', pk);
+            }
+            else if(delete_btn !== undefined){
+                model_label.textContent = '메시지 삭제하기';
+                body_ele.textContent = message;
+            }
+            button_ele.addEventListener('click', ()=>{
+                modal.hide();
+                /*
+                if(ok_handler){
+                    ok_handler();
+                    modal.hide();
+                }
+                 */
+            });
+            const modal = new bootstrap.Modal(modal_ele);
+            modal.show();
+        },
+        update_user_list(){
+            const html = [...this.username_set]
+                .map(username=> `<li>${username}</li>`)
+                .join('');
+            document.querySelector('#user_list').innerHTML = html;
+            document.querySelector('#user_count').textContent = `(${this.username_set.size}명)`;
+        }
+    };
+    handlers.init();
+    const protocol = location.protocol === 'http:' ? 'ws:' : 'wss';
+    const ws_url = protocol + "//" + location.host + "/ws" + location.pathname;
+    handlers.connect(ws_url);
+    </script>
+{% endblock %}

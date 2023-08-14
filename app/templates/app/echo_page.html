@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ko">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport"
+              content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        <title>웹소켓 Echo</title>
+    </head>
+    <body>웹소켓 Echo...</body>
+    <script>
+    const ws = new WebSocket("ws://localhost:8000/ws/echo/");
+    ws.onopen = () => {
+        console.log('웹소켓 서버와 접속');
+    };
+    ws.onmessage = (event) => {
+        const message = event.data;
+        const obj = JSON.parse(message);
+        console.log('메시지 수신 : ', message);
+        console.log(obj);
+    };
+
+    ws.onerror = () => {
+        console.log('웹소셋 에러 발생');
+    };
+
+    ws.onclose = (event) => {
+        if(event.wasClean) {
+            console.log('ws.close()에 의한 연결 끊김.');
+        }else{
+            console.log('웹소켓 서버와 연결이 죽음');
+        }
+    };
+    </script>
+</html>
