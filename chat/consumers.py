@@ -110,6 +110,17 @@ class ChatConsumer(JsonWebsocketConsumer):
                     "time": time_str,
                 },
             )
+        elif _type == "chat.message.delete":
+            message_pk = content["message_pk"]
+            message = get_object_or_404(Message, pk=message_pk, room=self.room)
+            message.delete()
+            async_to_sync(self.channel_layer.group_send)(
+                self.group_name,
+                {
+                    "type": "chat.message.delete",
+                    "pk": message_pk,
+                },
+            )
         else:
             print(f"Invalid message type : {_type}")
 
@@ -155,6 +166,14 @@ class ChatConsumer(JsonWebsocketConsumer):
                 "pk": message_dict["pk"],
                 "message": message_dict["message"],
                 "time": message_dict["time"],
+            }
+        )
+
+    def chat_message_delete(self, message_dict):
+        self.send_json(
+            {
+                "type": "chat.message.delete",
+                "pk": message_dict["pk"],
             }
         )
 

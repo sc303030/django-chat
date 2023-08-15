@@ -114,7 +114,35 @@
             </div>
         </div>
     </div>
- 
+    <div class="modal fade"
+         id="exampleModal2"
+         tabindex="-1"
+         aria-labelledby="exampleModalLabel2"
+         aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exampleModalLabel2">메시지 삭제하기</h5>
+                    <button type="button"
+                            class="btn-close"
+                            data-bs-dismiss="modal"
+                            aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="message-delete-form">
+                        <div class="mb-3 ">
+                            <div class="alert alert-danger" data-pk="" id="msg-delete-div">삭제하시겠습니까?</div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                            <button type="submit" class="btn btn-primary">삭제하기</button>
+                        </div>
+                    </form>
+                </div>
+
+            </div>
+        </div>
+    </div>
 
 {% endblock %}
 {% block scripts %}
@@ -136,6 +164,7 @@
             this.chat_message_tag = document.querySelector('#chat_messages');
             document.querySelector('#message_form').addEventListener('submit', this.onsubmit.bind(this));
             document.querySelector('#message_modify_form').addEventListener('submit', this.onsubmit_msg.bind(this));
+            document.querySelector('#message-delete-form').addEventListener('submit', this.onsubmit_msg_delete.bind(this));
         },
         onopen(){
             console.log('웹소켓 서버와 접속');
@@ -197,6 +226,9 @@
                     break;
                 case 'chat.message.modify.success':
                     this.append_modify_message(pk, message, time);
+                    break;
+                case 'chat.message.delete':
+                    this.append_delete_message(pk, '! 삭제된 메시지 입니다.');
                     break;
                 default:
                     console.error(`Invalid message type ${type}`);
@@ -279,7 +311,7 @@
                 const delete_btn = document.createElement('span');
                 delete_btn.className = 'small me-1 mb-2 rounded-3 text-muted d-flex justify-content-end delete-btn';
                 delete_btn.textContent = '삭제';
-                delete_btn.addEventListener('click', () => {this.msg_modal(pk, () => {}, undefined, true)});
+                delete_btn.addEventListener('click', () => {this.msg_modal_delete(pk, () => {}, undefined, true)});
                 const btn_line = document.createElement('span');
                 btn_line.className = 'small me-1 mb-2 rounded-3 text-muted d-flex justify-content-end';
                 btn_line.textContent = '|';
@@ -327,6 +359,12 @@
             p_message.innerText = message;
             p_time.innerText=time;
         },
+        append_delete_message(pk, message){
+            const msg_div = document.querySelector(`#message-${pk}`);
+            msg_div.firstChild.remove();
+            const p_message = document.querySelector(`#p-${pk}`);
+            p_message.innerText = message;
+        },
         onsubmit(event){
             event.preventDefault();
             const form_data = new FormData(event.target);
@@ -350,6 +388,15 @@
             this.ws.send(JSON.stringify({
                 type : 'chat.message.modify',
                 message:message,
+                message_pk:pk
+            }))
+        },
+        onsubmit_msg_delete(event){
+            event.preventDefault();
+            const pk = event.target.querySelector('#msg-delete-div').getAttribute('data-pk');
+            event.target.reset();
+            this.ws.send(JSON.stringify({
+                type : 'chat.message.delete',
                 message_pk:pk
             }))
         },
@@ -377,24 +424,23 @@
             const body_ele = modal_ele.querySelector('.modal-body');
             const button_ele = modal_ele.querySelector('.modal-footer .btn-primary');
             const model_label = document.querySelector('#exampleModalLabel');
-            if(modify_btn !== undefined){
-                model_label.textContent = '메시지 수정하기';
-                const msg_input = modal_ele.querySelector('#msg-modify');
-                msg_input.value = message;
-                msg_input.setAttribute('data-pk', pk);
-            }
-            else if(delete_btn !== undefined){
-                model_label.textContent = '메시지 삭제하기';
-                body_ele.textContent = message;
-            }
+            model_label.textContent = '메시지 수정하기';
+            const msg_input = modal_ele.querySelector('#msg-modify');
+            msg_input.value = message;
+            msg_input.setAttribute('data-pk', pk);
             button_ele.addEventListener('click', ()=>{
                 modal.hide();
-                /*
-                if(ok_handler){
-                    ok_handler();
-                    modal.hide();
-                }
-                 */
+            });
+            const modal = new bootstrap.Modal(modal_ele);
+            modal.show();
+        },
+        msg_modal_delete(pk , ok_handler, modify_btn, delete_btn){
+            const modal_ele = document.querySelector('#exampleModal2');
+            const button_ele = modal_ele.querySelector('.modal-footer .btn-primary');
+            const msg_div = modal_ele.querySelector('#msg-delete-div');
+            msg_div.setAttribute('data-pk', pk);
+            button_ele.addEventListener('click', ()=>{
+                modal.hide();
             });
             const modal = new bootstrap.Modal(modal_ele);
             modal.show();
