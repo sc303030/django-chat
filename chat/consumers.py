@@ -121,6 +121,16 @@ class ChatConsumer(JsonWebsocketConsumer):
                     "pk": message_pk,
                 },
             )
+        elif _type == "chat.message.typing":
+            sender = user.username
+            msg = content["msg"]
+            type_user = (
+                "chat.message.typing.add" if msg else "chat.message.typing.remove"
+            )
+            async_to_sync(self.channel_layer.group_send)(
+                self.group_name,
+                {"type": type_user, "sender": sender},
+            )
         else:
             print(f"Invalid message type : {_type}")
 
@@ -174,6 +184,22 @@ class ChatConsumer(JsonWebsocketConsumer):
             {
                 "type": "chat.message.delete",
                 "pk": message_dict["pk"],
+            }
+        )
+
+    def chat_message_typing_add(self, message_dict):
+        self.send_json(
+            {
+                "type": "chat.message.typing.add",
+                "sender": message_dict["sender"],
+            }
+        )
+
+    def chat_message_typing_remove(self, message_dict):
+        self.send_json(
+            {
+                "type": "chat.message.typing.remove",
+                "sender": message_dict["sender"],
             }
         )
 

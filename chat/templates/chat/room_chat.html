@@ -37,8 +37,13 @@
                                    name='message'
                                    class="form-control"
                                    autofocus
-                                   autocomplete="off">
+                                   autocomplete="off"
+                                   id="msg-input">
                         </form>
+                        <div id="typing" class="mt-1">
+                            <span class="fw-bold" id="typing-user"></span>
+                            <span class="small" id="typing-msg"></span>
+                        </div>
                     </div>
                 </div>
                 <hr class="my-3" />
@@ -149,6 +154,7 @@
     <script>
     const handlers = {
         username_set : new Set(),
+        typing_user_set : new Set(),
         chat_message_tag:null,
         ws:null,
         retry:0,
@@ -165,6 +171,7 @@
             document.querySelector('#message_form').addEventListener('submit', this.onsubmit.bind(this));
             document.querySelector('#message_modify_form').addEventListener('submit', this.onsubmit_msg.bind(this));
             document.querySelector('#message-delete-form').addEventListener('submit', this.onsubmit_msg_delete.bind(this));
+            document.querySelector('#msg-input').addEventListener('keyup', this.on_typing.bind(this));
         },
         onopen(){
             console.log('웹소켓 서버와 접속');
@@ -229,6 +236,14 @@
                     break;
                 case 'chat.message.delete':
                     this.append_delete_message(pk, '! 삭제된 메시지 입니다.');
+                    break;
+                case 'chat.message.typing.add':
+                    this.typing_user_set.add(sender);
+                    this.append_typing_message();
+                    break;
+                case 'chat.message.typing.remove':
+                    this.typing_user_set.delete(sender);
+                    this.append_typing_message();
                     break;
                 default:
                     console.error(`Invalid message type ${type}`);
@@ -353,6 +368,19 @@
             this.chat_message_tag.appendChild(element);
             this.chat_message_tag.scrollTop = this.chat_message_tag.scrollHeight;
         },
+       append_typing_message(){
+                const user_list = [...this.typing_user_set]
+                .map(username=> `${username}`);
+               const user = document.querySelector('#typing-user');
+               const msg = document.querySelector('#typing-msg');
+               user.innerText = user_list;
+               if(user_list.length === 0){
+                   msg.innerText = '';
+               }else{
+                   msg.innerText = '님이 메시지를 입력중입니다.';
+               }
+
+        },
         append_modify_message(pk , message, time){
             const p_message = document.querySelector(`#p-${pk}`);
             const p_time = document.querySelector(`#time-${pk}`);
@@ -398,6 +426,12 @@
             this.ws.send(JSON.stringify({
                 type : 'chat.message.delete',
                 message_pk:pk
+            }))
+        },
+        on_typing(event){
+            this.ws.send(JSON.stringify({
+                    type : 'chat.message.typing',
+                    msg : event.target.value
             }))
         },
         reconnect(){
