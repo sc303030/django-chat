@@ -131,6 +131,24 @@ class ChatConsumer(JsonWebsocketConsumer):
                 self.group_name,
                 {"type": type_user, "sender": sender},
             )
+        elif _type == "chat.message.like":
+            pk = content["pk"]
+            msg = get_object_or_404(Message, pk=pk)
+            msg.like += 1
+            msg.save(update_fields=["like"])
+            async_to_sync(self.channel_layer.group_send)(
+                self.group_name,
+                {"type": "chat.message.like", "pk": pk, "cnt": msg.like},
+            )
+        elif _type == "chat.message.dislike":
+            pk = content["pk"]
+            msg = get_object_or_404(Message, pk=pk)
+            msg.like -= 1
+            msg.save(update_fields=["like"])
+            async_to_sync(self.channel_layer.group_send)(
+                self.group_name,
+                {"type": "chat.message.dislike", "pk": pk, "cnt": msg.like},
+            )
         else:
             print(f"Invalid message type : {_type}")
 
@@ -200,6 +218,24 @@ class ChatConsumer(JsonWebsocketConsumer):
             {
                 "type": "chat.message.typing.remove",
                 "sender": message_dict["sender"],
+            }
+        )
+
+    def chat_message_like(self, message_dict):
+        self.send_json(
+            {
+                "type": "chat.message.like",
+                "pk": message_dict["pk"],
+                "cnt": message_dict["cnt"],
+            }
+        )
+
+    def chat_message_dislike(self, message_dict):
+        self.send_json(
+            {
+                "type": "chat.message.dislike",
+                "pk": message_dict["pk"],
+                "cnt": message_dict["cnt"],
             }
         )
 
