@@ -134,20 +134,17 @@ class ChatConsumer(JsonWebsocketConsumer):
         elif _type == "chat.message.like":
             pk = content["pk"]
             msg = get_object_or_404(Message, pk=pk)
-            msg.like += 1
-            msg.save(update_fields=["like"])
+            is_like = msg.is_like_user(user)
+            type_like = "chat.message.like"
+            if is_like:
+                type_like = "chat.message.dislike"
+                msg.like_user_set.remove(user)
+            else:
+                msg.like_user_set.add(user)
+            cnt = msg.like_user_set.count()
             async_to_sync(self.channel_layer.group_send)(
                 self.group_name,
-                {"type": "chat.message.like", "pk": pk, "cnt": msg.like},
-            )
-        elif _type == "chat.message.dislike":
-            pk = content["pk"]
-            msg = get_object_or_404(Message, pk=pk)
-            msg.like -= 1
-            msg.save(update_fields=["like"])
-            async_to_sync(self.channel_layer.group_send)(
-                self.group_name,
-                {"type": "chat.message.dislike", "pk": pk, "cnt": msg.like},
+                {"type": type_like, "pk": pk, "cnt": cnt},
             )
         else:
             print(f"Invalid message type : {_type}")

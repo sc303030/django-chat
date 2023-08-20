@@ -347,7 +347,6 @@
             const like_cnt = document.createElement('span');
             like_cnt.id = `like-cnt-${pk}`;
             like_icon.className = 'fa-regular fa-heart';
-            like_icon.setAttribute('data-tf', "false");
             like_icon.addEventListener('click', () => {this.like_btn(pk)});
             like_div.className = 'like-div';
             like_div.appendChild(like_icon);
@@ -495,7 +494,6 @@
         like_icon(pk, cnt){
             const like_icon = document.querySelector(`#like-icon-${pk}`);
             like_icon.className = 'fa-solid fa-heart';
-            like_icon.setAttribute('data-tf', "true");
             const like_cnt = document.querySelector(`#like-cnt-${pk}`);
             if(0<cnt){
                 like_cnt.innerText = cnt;
@@ -505,30 +503,20 @@
         },
         dislike_icon(pk, cnt){
             const like_icon = document.querySelector(`#like-icon-${pk}`);
-            like_icon.className = 'fa-regular fa-heart';
-            like_icon.setAttribute('data-tf', "false");
             const like_cnt = document.querySelector(`#like-cnt-${pk}`);
             if(0<cnt){
+                like_icon.className = 'fa-solid fa-heart';
                 like_cnt.innerText = cnt;
             }else{
+                like_icon.className = 'fa-regular fa-heart';
                 like_cnt.innerText = '';
             }
         },
         like_btn(pk){
-            const like_icon = document.querySelector(`#like-icon-${pk}`);
-            const tf = like_icon.getAttribute('data-tf');
-            if(tf === "false"){
-                this.ws.send(JSON.stringify({
-                type : 'chat.message.like',
-                pk : pk
-            }))
-            }else{
-                this.ws.send(JSON.stringify({
-                type : 'chat.message.dislike',
-                pk : pk
-            }))
-            }
-
+            this.ws.send(JSON.stringify({
+                    type: 'chat.message.like',
+                    pk: pk
+                }))
         },
         reconnect(){
               this.connect();

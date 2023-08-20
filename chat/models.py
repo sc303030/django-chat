@@ -111,10 +111,15 @@ class Message(models.Model):
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    like = models.PositiveIntegerField(default=0)
+    like_user_set = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True, related_name="like_message_set"
+    )
 
     def __str__(self):
         return self.content
+
+    def is_like_user(self, user):
+        return self.like_user_set.filter(pk=user.pk).exists()
 
     class Meta:
         ordering = ["-created_at"]
